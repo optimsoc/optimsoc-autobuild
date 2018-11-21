@@ -1,0 +1,157 @@
+stages:
+  - get-src
+  - build-base
+  - build-ext
+  - test
+  - dist
+
+before_script:
+  # Update package cache
+  - sudo apt-get update
+
+  # Restore optimsoc-src from get-src-optimsoc job (if it exists)
+  - test -f optimsoc-*-src.tar.gz && mkdir optimsoc-src && tar -xf optimsoc-*-src.tar.gz --strip-components=1 -C optimsoc-src
+
+  # Build dependencies (if the get-src-optimsoc stage has been completed)
+  - test -f optimsoc-src/tools/install-build-deps.sh && INSTALL_DOC_DEPS=no optimsoc-src/tools/install-build-deps.sh
+  - sudo -H pip3 install --upgrade pip && sudo pip3 install pytest
+  - pytest --version
+
+  # Spyglass support needs a fusesoc version > 1.8.4 with additional fixes
+  # XXX: Switch to a pypi version once a release happened
+  - git clone --branch=spyglass-parameters https://github.com/imphil/fusesoc.git
+  #- git clone https://github.com/olofk/fusesoc
+  - sudo -H pip3 install -e fusesoc
+  - fusesoc --version
+
+  # OpTiMSoC Prebuilts (Verilator and or1k toolchain)
+  # XXX: This directory could be cached
+  - mkdir optimsoc
+  - curl -sL https://raw.githubusercontent.com/optimsoc/prebuilts/master/optimsoc-prebuilt-deploy.py | python - -d $CI_PROJECT_DIR/optimsoc all
+
+  # load OpTiMSoC Prebuilts (Verilator and or1k toolchain)
+  - test -f optimsoc/setup_prebuilt.sh && source optimsoc/setup_prebuilt.sh
+
+  # Install and load optimsoc framework (if it has already been compiled)
+  - test -f optimsoc-*-base.tar.gz && mkdir -p optimsoc/framework && tar -xf optimsoc-*-base.tar.gz --strip-components=1 -C optimsoc/framework
+
+get-src-optimsoc:
+  stage: get-src
+  script:
+    # Prepare OpTiMSoC source tree
+    - git clone https://github.com/optimsoc/optimsoc.git optimsoc-src
+    - mkdir optimsoc-src/objdir
+    - make -C optimsoc-src srcdist
+    - mv optimsoc-src/objdir/optimsoc-*-src.tar.gz .
+  artifacts:
+    paths:
+      - optimsoc-*-src.tar.gz
+
+srctest-cocotb:
+  stage: build-base
+  script:
+    - module load synopsys/vcs-mx/latest
+    - INSTALL_COCOTB=1 optimsoc-src/external/opensocdebug/hardware/test/cocotb/cocotb_testrunner optimsoc-src
+  dependencies:
+    - get-src-optimsoc
+
+build-base:
+  stage: build-base
+  script:
+    # Call install-build-deps.sh again, this time install docs dependencies
+    # as well. We don't always install them since they include texlive, which is
+    # takes quite some time to download and install.
+    - INSTALL_DOC_DEPS=yes optimsoc-src/tools/install-build-deps.sh
+
+    # Build and install OpTiMSoC to $CI_PROJECT_DIR/optimsoc/framework
+    - make -C optimsoc-src BUILD_EXAMPLES=no BUILD_EXAMPLES_FPGA=no BUILD_DOCS=yes build dist
+    - mv optimsoc-src/objdir/optimsoc-*-base.tar.gz .
+  artifacts:
+    paths:
+      - optimsoc-*-base.tar.gz
+  dependencies:
+    - get-src-optimsoc
+
+build-ext-examples:
+  stage: build-ext
+  script:
+    - module load xilinx/vivado/2018.2
+
+    # Build and install OpTiMSoC to $CI_PROJECT_DIR/optimsoc/framework
+    - make -C optimsoc-src BUILD_EXAMPLES=yes BUILD_EXAMPLES_FPGA=yes BUILD_DOCS=no build dist
+    - mv optimsoc-src/objdir/optimsoc-*-examples.tar.gz .
+  artifacts:
+    paths:
+      - optimsoc-*-examples.tar.gz
+  dependencies:
+    - get-src-optimsoc
+
+build-ext-spyglass:
+  stage: build-ext
+  script:
+    # dependency needed by spyglass
+    - sudo apt-get install -y lsb-release
+    - source optimsoc/framework/optimsoc-environment.sh
+    - module load synopsys/spyglass/N-2017.12-SP1-1
+    - fusesoc --cores-root optimsoc-src/examples run --target=lint --tool=spyglass optimsoc:examples:compute_tile_nexys4ddr
+  dependencies:
+    - get-src-optimsoc
+    - build-base
+
+build-ext-compute_tile_vcu108_eightcore_usb3:
+  stage: build-ext
+  script:
+    - source optimsoc/framework/optimsoc-environment.sh
+    - module load xilinx/vivado/2018.2
+    - fusesoc --cores-root optimsoc-src/examples build optimsoc:examples:system_2x2_cccc_vcu108 --HOST_IF usb3 --NUM_CORES 8
+    - mkdir -p examples-ext/fpga/vcu108/compute_tile
+    - mv build/*/*-vivado/*.bit examples-ext/fpga/vcu108/compute_tile/compute_tile_vcu108_eightcore_usb3.bit
+  artifacts:
+    when: always
+    paths:
+      - build/*/*-vivado/*.bit
+      - build/*/*-vivado/*.runs/synth_1/runme.log
+      - build/*/*-vivado/*.runs/impl_1/runme.log
+      - examples-ext
+  dependencies:
+    - get-src-optimsoc
+    - build-base
+
+build-ext-system_2x2_cccc_vcu108_dualcore_usb3:
+  stage: build-ext
+  script:
+    - source optimsoc/framework/optimsoc-environment.sh
+    - module load xilinx/vivado/2018.2
+    - fusesoc --cores-root optimsoc-src/examples build optimsoc:examples:compute_tile_vcu108 --HOST_IF usb3 --NUM_CORES 2
+    - mkdir -p examples-ext/fpga/vcu108/system_2x2_cccc
+    - mv build/*/*-vivado/*.bit examples-ext/fpga/vcu108/system_2x2_cccc/system_2x2_cccc_vcu108_dualcore_usb3.bit
+  artifacts:
+    when: always
+    paths:
+      - build/*/*-vivado/*.bit
+      - build/*/*-vivado/*.runs/synth_1/runme.log
+      - build/*/*-vivado/*.runs/impl_1/runme.log
+      - examples-ext
+  dependencies:
+    - get-src-optimsoc
+    - build-base
+
+deploy:
+  stage: dist
+  script:
+    # Install and configure JFrog CLI
+    # Documentation: https://www.jfrog.com/confluence/display/CLI/CLI+for+JFrog+Bintray
+    - curl -fL https://getcli.jfrog.io | sh
+    - ./jfrog bt config --user=$BINTRAY_USER --key=$BINTRAY_API_KEY --licenses MIT
+
+    # Get OpTiMSoC version
+    - export OPTIMSOC_VERSION=$(optimsoc-src/tools/get-version.sh)
+
+    # Create extended examples package
+    - tar -cz --transform "s@examples-ext@$OPTIMSOC_VERSION/examples@" -f optimsoc-$OPTIMSOC_VERSION-examples-ext.tar.gz examples-ext
+
+    # Upload artifacts
+    - ./jfrog bt upload optimsoc-*-src.tar.gz optimsoc/nightly/optimsoc-src/$OPTIMSOC_VERSION
+    - ./jfrog bt upload optimsoc-*-base.tar.gz optimsoc/nightly/optimsoc-base/$OPTIMSOC_VERSION
+    - ./jfrog bt upload optimsoc-*-examples.tar.gz optimsoc/nightly/optimsoc-examples/$OPTIMSOC_VERSION
+    - ./jfrog bt upload optimsoc-*-examples-ext.tar.gz optimsoc/nightly/optimsoc-examples-ext/$OPTIMSOC_VERSION
