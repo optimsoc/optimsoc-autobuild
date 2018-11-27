@@ -54,6 +54,7 @@ srctest-cocotb:
     - INSTALL_COCOTB=1 optimsoc-src/external/opensocdebug/hardware/test/cocotb/cocotb_testrunner optimsoc-src
   dependencies:
     - get-src-optimsoc
+  allow_failure: true
 
 build-base:
   stage: build-base
@@ -97,6 +98,7 @@ build-ext-spyglass:
   dependencies:
     - get-src-optimsoc
     - build-base
+  allow_failure: true
 
 build-ext-compute_tile_vcu108_eightcore_usb3:
   stage: build-ext
@@ -116,6 +118,7 @@ build-ext-compute_tile_vcu108_eightcore_usb3:
   dependencies:
     - get-src-optimsoc
     - build-base
+  allow_failure: true
 
 build-ext-system_2x2_cccc_vcu108_dualcore_usb3:
   stage: build-ext
@@ -135,6 +138,7 @@ build-ext-system_2x2_cccc_vcu108_dualcore_usb3:
   dependencies:
     - get-src-optimsoc
     - build-base
+  allow_failure: true
 
 deploy:
   stage: dist
