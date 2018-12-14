@@ -152,7 +152,7 @@ deploy:
     - export OPTIMSOC_VERSION=$(optimsoc-src/tools/get-version.sh)
 
     # Create extended examples package
-    - tar -cz --transform "s@examples-ext@$OPTIMSOC_VERSION/examples@" -f optimsoc-$OPTIMSOC_VERSION-examples-ext.tar.gz examples-ext
+    - tar -cz --transform "s@examples-ext@optimsoc-$OPTIMSOC_VERSION/examples@" -f optimsoc-$OPTIMSOC_VERSION-examples-ext.tar.gz examples-ext
 
     # Upload artifacts
     - ./jfrog bt upload --publish optimsoc-*-src.tar.gz optimsoc/nightly/optimsoc-src/$OPTIMSOC_VERSION
