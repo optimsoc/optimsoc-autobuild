@@ -1,3 +1,12 @@
+#
+# OpTiMSoC autobuilder configuration
+#
+# This configuration file is used by GitLab CI to build and test OpTiMSoC.
+# Resulting build artifacts are deployed to Bintray.
+#
+# See the README.md file in this repository for more information.
+#
+
 stages:
   - get-src
   - build-base
@@ -32,13 +41,14 @@ before_script:
   # load OpTiMSoC Prebuilts (Verilator and or1k toolchain)
   - test -f optimsoc/setup_prebuilt.sh && source optimsoc/setup_prebuilt.sh
 
-  # Install and load optimsoc framework (if it has already been compiled)
+  # Install and load optimsoc framework (whatever parts have already been compiled)
   - test -f optimsoc-*-base.tar.gz && mkdir -p optimsoc/framework && tar -xf optimsoc-*-base.tar.gz --strip-components=1 -C optimsoc/framework
+  - for f in optimsoc-*-examples*.tar.gz; do tar -xf $f --strip-components=1 -C optimsoc/framework; done || true
 
+# Create an OpTiMSoC source distribution tar file
 get-src-optimsoc:
   stage: get-src
   script:
-    # Prepare OpTiMSoC source tree
     - git clone https://github.com/optimsoc/optimsoc.git optimsoc-src
     - mkdir optimsoc-src/objdir
     - make -C optimsoc-src srcdist
@@ -47,6 +57,7 @@ get-src-optimsoc:
     paths:
       - optimsoc-*-src.tar.gz
 
+# Run cocotb-based tests
 srctest-cocotb:
   stage: build-base
   script:
@@ -56,6 +67,7 @@ srctest-cocotb:
     - get-src-optimsoc
   allow_failure: true
 
+# Build a binary distribution of the OpTiMSoC framework (without examples)
 build-base:
   stage: build-base
   script:
@@ -63,8 +75,6 @@ build-base:
     # as well. We don't always install them since they include texlive, which is
     # takes quite some time to download and install.
     - INSTALL_DOC_DEPS=yes optimsoc-src/tools/install-build-deps.sh
-
-    # Build and install OpTiMSoC to $CI_PROJECT_DIR/optimsoc/framework
     - make -C optimsoc-src BUILD_EXAMPLES=no BUILD_EXAMPLES_FPGA=no BUILD_DOCS=yes build dist
     - mv optimsoc-src/objdir/optimsoc-*-base.tar.gz .
   artifacts:
@@ -73,12 +83,11 @@ build-base:
   dependencies:
     - get-src-optimsoc
 
+# Build examples: Verilator-based simulations, and some FPGA examples
 build-ext-examples:
   stage: build-ext
   script:
     - module load xilinx/vivado/2018.2
-
-    # Build and install OpTiMSoC to $CI_PROJECT_DIR/optimsoc/framework
     - make -C optimsoc-src BUILD_EXAMPLES=yes BUILD_EXAMPLES_FPGA=yes BUILD_DOCS=no build dist
     - mv optimsoc-src/objdir/optimsoc-*-examples.tar.gz .
   artifacts:
@@ -87,11 +96,10 @@ build-ext-examples:
   dependencies:
     - get-src-optimsoc
 
+# Run Spyglass Lint on the hardware source code
 build-ext-spyglass:
   stage: build-ext
   script:
-    # dependency needed by spyglass
-    - sudo apt-get install -y lsb-release
     - source optimsoc/framework/optimsoc-environment.sh
     - module load synopsys/spyglass/N-2017.12-SP1-1
     - fusesoc --cores-root optimsoc-src/examples run --target=lint --tool=spyglass optimsoc:examples:compute_tile_nexys4ddr
@@ -100,6 +108,8 @@ build-ext-spyglass:
     - build-base
   allow_failure: true
 
+# Build an extended example: A compute_tile system with eight cores for the
+# VCU108 board using a Cypress FX3-based USB3 off-chip interface
 build-ext-compute_tile_vcu108_eightcore_usb3:
   stage: build-ext
   script:
@@ -120,6 +130,9 @@ build-ext-compute_tile_vcu108_eightcore_usb3:
     - build-base
   allow_failure: true
 
+# Build an extended example: A 2x2-mesh system with four compute tiles, each of
+# them featuring two CPU cores, for the VCU108 board using a Cypress FX3-based
+# USB3 off-chip interface
 build-ext-system_2x2_cccc_vcu108_dualcore_usb3:
   stage: build-ext
   script:
@@ -140,7 +153,31 @@ build-ext-system_2x2_cccc_vcu108_dualcore_usb3:
     - build-base
   allow_failure: true
 
-deploy:
+# Run the systemtests on the builds
+# The systemtests run in simulation and on actual FPGA hardware.
+test:
+  stage: test
+  tags:
+    # Test requires a GitLab CI Runner with this tag, indicating a connected
+    # Nexys 4 DDR board
+    - hw-nexys4ddr
+  script:
+    - source optimsoc/framework/optimsoc-environment.sh
+    - module load xilinx/vivado/2018.2
+
+    # Write test configuration: where to find the boards
+    # Expected setup:
+    # /dev/ttyUSB1: UART of the Nexys4 DDR board
+    - ls -l /dev/ttyUSB*
+    - mkdir -p $HOME/.config/optimsoc
+    - 'echo "boards: { nexys4ddr: { device: /dev/ttyUSB1 } }" > $HOME/.config/optimsoc/test-localconf.yaml'
+
+    - make -C optimsoc-src test BUILD_EXAMPLES_FPGA=yes
+
+# Nightly Build: Deploy (upload) the build artifacts to Bintray
+# This job expects the environment variables BINTRAY_USER and BINTRAY_API_KEY
+# to be set.
+dist-nightly:
   stage: dist
   script:
     # Install and configure JFrog CLI
