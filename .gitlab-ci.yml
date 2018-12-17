@@ -45,17 +45,24 @@ before_script:
   - test -f optimsoc-*-base.tar.gz && mkdir -p optimsoc/framework && tar -xf optimsoc-*-base.tar.gz --strip-components=1 -C optimsoc/framework
   - for f in optimsoc-*-examples*.tar.gz; do tar -xf $f --strip-components=1 -C optimsoc/framework; done || true
 
+  # Load build information file into environment
+  - test -f buildinfo && source ./buildinfo
+
 # Create an OpTiMSoC source distribution tar file
 get-src-optimsoc:
   stage: get-src
   script:
     - git clone https://github.com/optimsoc/optimsoc.git optimsoc-src
+    - if [ "$OPTIMSOC_RELEASE_TAG" ]; then git -C optimsoc-src checkout "$OPTIMSOC_RELEASE_TAG"; fi
+    - echo "export BUILDINFO_NIGHTLY_VERSION=$(date -u +%Y-%m-%d-%H-%M-%S)" > buildinfo
+    - echo "export BUILDINFO_GIT_COMMIT=$(git -C optimsoc-src rev-parse HEAD)" >> buildinfo
     - mkdir optimsoc-src/objdir
     - make -C optimsoc-src srcdist
     - mv optimsoc-src/objdir/optimsoc-*-src.tar.gz .
   artifacts:
     paths:
       - optimsoc-*-src.tar.gz
+      - buildinfo
 
 # Run cocotb-based tests
 srctest-cocotb:
@@ -179,20 +186,36 @@ test:
 # to be set.
 dist-nightly:
   stage: dist
+  except:
+    variables:
+      - $OPTIMSOC_RELEASE_TAG
   script:
-    # Install and configure JFrog CLI
-    # Documentation: https://www.jfrog.com/confluence/display/CLI/CLI+for+JFrog+Bintray
-    - curl -fL https://getcli.jfrog.io | sh
-    - ./jfrog bt config --user=$BINTRAY_USER --key=$BINTRAY_API_KEY --licenses MIT
-
-    # Get OpTiMSoC version
-    - export OPTIMSOC_VERSION=$(optimsoc-src/tools/get-version.sh)
-
     # Create extended examples package
+    - export OPTIMSOC_VERSION=$(optimsoc-src/tools/get-version.sh)
     - tar -cz --transform "s@examples-ext@optimsoc-$OPTIMSOC_VERSION/examples@" -f optimsoc-$OPTIMSOC_VERSION-examples-ext.tar.gz examples-ext
 
-    # Upload artifacts
-    - ./jfrog bt upload --publish optimsoc-*-src.tar.gz optimsoc/nightly/optimsoc-src/$OPTIMSOC_VERSION
-    - ./jfrog bt upload --publish optimsoc-*-base.tar.gz optimsoc/nightly/optimsoc-base/$OPTIMSOC_VERSION
-    - ./jfrog bt upload --publish optimsoc-*-examples.tar.gz optimsoc/nightly/optimsoc-examples/$OPTIMSOC_VERSION
-    - ./jfrog bt upload --publish optimsoc-*-examples-ext.tar.gz optimsoc/nightly/optimsoc-examples-ext/$OPTIMSOC_VERSION
+    # Upload artifacts to the optimsoc/nightly channel on Bintray
+    - ./upload-bintray.sh
+
+# Release Build: Deploy (upload) the build artifacts to GitHub Releases
+# This job expects the environment variables GITHUB_TOKEN and GITHUB_USER
+# to be set.
+dist-release:
+  stage: dist
+  only:
+    variables:
+      - $OPTIMSOC_RELEASE_TAG
+  script:
+    # Create extended examples package
+    - export OPTIMSOC_VERSION=$(optimsoc-src/tools/get-version.sh)
+    - tar -cz --transform "s@examples-ext@optimsoc-$OPTIMSOC_VERSION/examples@" -f optimsoc-$OPTIMSOC_VERSION-examples-ext.tar.gz examples-ext
+
+    # Download ghr, a helper tool for GitHub Releases
+    - curl -sfL https://github.com/tcnksm/ghr/releases/download/v0.12.0/ghr_v0.12.0_linux_amd64.tar.gz | tar -xzf - --strip-components=1 --wildcards '*/ghr'
+
+    # Prepare release artifacts in one directory
+    - mkdir -p release-artifacts
+    - cp optimsoc-*-src.tar.gz optimsoc-*-base.tar.gz optimsoc-*-examples.tar.gz optimsoc-*-examples-ext.tar.gz release-artifacts
+
+    # Upload release (in draft mode, release can be edited and published in GitHub web)
+    - ./ghr -u optimsoc -r optimsoc -draft -n ${OPTIMSOC_RELEASE_TAG:1} -c "$BUILDINFO_GIT_COMMIT" "$OPTIMSOC_RELEASE_TAG" release-artifacts
