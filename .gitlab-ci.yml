@@ -23,14 +23,9 @@ before_script:
 
   # Build dependencies (if the get-src-optimsoc stage has been completed)
   - test -f optimsoc-src/tools/install-build-deps.sh && INSTALL_DOC_DEPS=no optimsoc-src/tools/install-build-deps.sh
-  - sudo -H pip3 install --upgrade pip && sudo pip3 install pytest
+  - sudo -H pip3 install --upgrade pip
+  - sudo -H pip3 install pytest fusesoc
   - pytest --version
-
-  # Spyglass support needs a fusesoc version > 1.8.4 with additional fixes
-  # XXX: Switch to a pypi version once a release happened
-  - git clone --branch=spyglass-parameters https://github.com/imphil/fusesoc.git
-  #- git clone https://github.com/olofk/fusesoc
-  - sudo -H pip3 install -e fusesoc
   - fusesoc --version
 
   # OpTiMSoC Prebuilts (Verilator and or1k toolchain)
