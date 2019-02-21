@@ -109,6 +109,11 @@ build-ext-spyglass:
     - get-src-optimsoc
     - build-base
   allow_failure: true
+  artifacts:
+    when: always
+    paths:
+      - build/*/lint-spyglass/*/consolidated_reports
+      - build/*/lint-spyglass/*/compute_tile_dm_nexys4/lint/*/spyglass.log
 
 # Build an extended example: A compute_tile system with eight cores for the
 # VCU108 board using a Cypress FX3-based USB3 off-chip interface
