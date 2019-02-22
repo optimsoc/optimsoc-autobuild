@@ -129,8 +129,8 @@ build-ext-compute_tile_vcu108_eightcore_usb3:
     when: always
     paths:
       - build/*/*-vivado/*.bit
-      - build/*/*-vivado/*.runs/synth_1/runme.log
-      - build/*/*-vivado/*.runs/impl_1/runme.log
+      - build/*/*-vivado/*.runs/*/runme.log
+      - build/*/*-vivado/*.runs/*/*.rpt
       - examples-ext
   dependencies:
     - get-src-optimsoc
@@ -152,8 +152,8 @@ build-ext-system_2x2_cccc_vcu108_dualcore_usb3:
     when: always
     paths:
       - build/*/*-vivado/*.bit
-      - build/*/*-vivado/*.runs/synth_1/runme.log
-      - build/*/*-vivado/*.runs/impl_1/runme.log
+      - build/*/*-vivado/*.runs/*/runme.log
+      - build/*/*-vivado/*.runs/*/*.rpt
       - examples-ext
   dependencies:
     - get-src-optimsoc
