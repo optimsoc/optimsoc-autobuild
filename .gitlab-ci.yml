@@ -23,7 +23,7 @@ before_script:
 
   # Build dependencies (if the get-src-optimsoc stage has been completed)
   - test -f optimsoc-src/tools/install-build-deps.sh && INSTALL_DOC_DEPS=no optimsoc-src/tools/install-build-deps.sh
-  - sudo -H pip3 install --upgrade pip
+  - sudo -H pip3 install --upgrade pip setuptools
   - sudo -H pip3 install pytest fusesoc
   - pytest --version
   - fusesoc --version
