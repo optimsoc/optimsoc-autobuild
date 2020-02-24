@@ -23,8 +23,10 @@ before_script:
 
   # Build dependencies (if the get-src-optimsoc stage has been completed)
   - test -f optimsoc-src/tools/install-build-deps.sh && INSTALL_DOC_DEPS=no optimsoc-src/tools/install-build-deps.sh
-  - sudo -H pip3 install --upgrade pip setuptools
-  - sudo -H pip3 install pytest fusesoc
+  - export PATH=$HOME/.local/bin:$PATH
+  - pip3 install --user --upgrade pip setuptools
+  # XXX: zipp 2.0+ doesn't work with Python 3.5.2, as it is used on Ubuntu 16.04
+  - python3 -m pip install --user pytest fusesoc 'zipp<2'
   - pytest --version
   - fusesoc --version
 
